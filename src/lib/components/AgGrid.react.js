@@ -1668,6 +1668,11 @@ DashAgGrid.propTypes = {
     rowSelected: PropTypes.any,
 
     /**
+     * Initial Row to be selected.
+     */
+    selected_rows: PropTypes.any,
+
+    /**
      * Row selection is changed. Use the grid API to get the new row selected.
      */
     selectionChanged: PropTypes.any,

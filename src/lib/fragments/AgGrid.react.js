@@ -1,15 +1,15 @@
-import React, {Component, lazy, require} from 'react';
+import React, {Component} from 'react';
 import * as evaluate from 'static-eval';
 import * as esprima from 'esprima';
 import {omit} from 'ramda';
-import {propTypes, defaultProps} from '../components/AgGrid.react';
+import {defaultProps, propTypes} from '../components/AgGrid.react';
 
 import MarkdownRenderer from '../renderers/markdownRenderer';
 import RowMenuRenderer from '../renderers/rowMenuRenderer';
 import * as customFunctions from '../renderers/customFunctions';
 
 import 'ag-grid-community';
-import { AgGridReact } from 'ag-grid-react';
+import {AgGridReact} from 'ag-grid-react';
 
 import lodash from 'lodash';
 
@@ -62,6 +62,7 @@ export default class DashAgGrid extends Component {
         this.resetColumnState = this.resetColumnState.bind(this);
         this.exportDataAsCsv = this.exportDataAsCsv.bind(this);
         this.setSelection = this.setSelection.bind(this);
+        this.setSelectionById = this.setSelectionById.bind(this);
         this.parseParamFunction = this.parseParamFunction.bind(this);
 
         //Additional Exposure
@@ -75,9 +76,27 @@ export default class DashAgGrid extends Component {
         this.addRows = this.addRows.bind(this);
         this.getRowData = this.getRowData.bind(this);
         this.fixCols = this.fixCols.bind(this);
+        this.onFirstDataRendered = this.onFirstDataRendered.bind(this);
 
         this.selectionEventFired = false;
 
+    }
+
+    setSelectionById(selection) {
+        console.log("selection by id",selection)
+        if (this.state.gridApi && selection) {
+            if (!selection.length) {
+                this.state.gridApi.deselectAll();
+            } else {
+                this.state.gridApi.forEachNode((node) => {
+                    let isSelected = selection.some((i) => {
+                        // Return true if the node data is the same as i, false if it is different
+                        return selection.includes(node.data.id)
+                    });
+                    node.setSelected(isSelected);
+                });
+            }
+        }
     }
 
     setSelection(selection) {
@@ -207,8 +226,8 @@ export default class DashAgGrid extends Component {
             dashGridOptions,
             rowData,
             columnSize,
+            rowSelected
         } = this.props;
-
         if (rowData) {
 
             if (this.state.rowData) {
@@ -244,16 +263,24 @@ export default class DashAgGrid extends Component {
             setProps({getDetailResponse: null});
         }
         // Call the API to select rows unless the update was triggered by a selection made in the UI
+
         if (
             !lodash.isEqual(selectionChanged, prevProps.selectionChanged) &&
             !this.selectionEventFired
         ) {
             this.setSelection(selectionChanged);
         }
+        console.log("diff rows", rowSelected, prevProps.rowSelected)
+        if (
+            lodash.isEqual(rowSelected, prevProps.rowSelected)
+        ) {
+            this.setSelectionById(rowSelected);
+
+        }
 
         if (JSON.stringify(cellStyle) != JSON.stringify(prevProps.cellStyle) ||
-         JSON.stringify(this.props.columnDefs) != JSON.stringify(prevProps.columnDefs) ||
-        prevProps.columnSize != columnSize) {
+            JSON.stringify(this.props.columnDefs) != JSON.stringify(prevProps.columnDefs) ||
+            prevProps.columnSize != columnSize) {
             this.props.setProps({columnDefs: JSON.parse(JSON.stringify(this.props.columnDefs))})
             this.setUpCols(cellStyle)
         }
@@ -432,7 +459,7 @@ export default class DashAgGrid extends Component {
     parseParamFunction({params}, tempFunction) {
         try {
             const parsedCondition = esprima.parse(tempFunction).body[0]
-                    .expression;
+                .expression;
             const value = evaluate(parsedCondition, {...params, ...customFunctions, ...window.dashAgGridFunctions})
             return value
         } catch (err) {
@@ -440,6 +467,11 @@ export default class DashAgGrid extends Component {
         }
         //const value = evaluate(parsedCondition, {...params})
         return ''
+    }
+
+    onFirstDataRendered(_) {
+        const {selected_rows} = this.props;
+        this.state.gridApi.forEachNode(node => selected_rows.includes(node.id) ? node.setSelected(true) : null)
     }
 
     generateRenderer(Renderer) {
@@ -504,30 +536,31 @@ export default class DashAgGrid extends Component {
         } else {
             const cols = this.state.gridColumnApi.getColumnState()
             const adding = {}
-            for (var x=0; x<cols.length; x++) {
+            for (var x = 0; x < cols.length; x++) {
                 adding[cols[x]['colId']] = ''
             }
             this.state.gridApi.applyTransaction({add: [adding]})
         }
         this.props.setProps({
-                enableAddRows: false,
-                rowData: this.getRowData()
-            })
+            enableAddRows: false,
+            rowData: this.getRowData()
+        })
     }
 
     autoSizeAllColumns(skipHeader) {
         const allColumnIds = [];
         this.state.gridColumnApi.getColumnState().forEach((column) => {
-          allColumnIds.push(column.colId);
+            allColumnIds.push(column.colId);
         });
         this.state.gridColumnApi.autoSizeColumns(allColumnIds, skipHeader);
         this.props.setProps({
             enableAutoSizeAllColumns: false,
             enableAutoSizeAllColumnsSkipHeaders: false,
         });
-    };
+    }
+    ;
 
-    updateColumnDefs () {
+    updateColumnDefs() {
         this.props.setProps({
             columnState: JSON.parse(JSON.stringify(this.state.gridColumnApi.getColumnState())),
             enableUpdateColumnDefs: false
@@ -660,6 +693,7 @@ export default class DashAgGrid extends Component {
                     onSortChanged={this.onSortChanged}
                     onRowDataUpdated={this.onRowDataUpdated}
                     onRowGroupOpened={this.onRowGroupOpened}
+                    onFirstDataRendered={this.onFirstDataRendered}
                     onDisplayedColumnsChanged={this.onDisplayedColumnsChanged}
                     onGridSizeChanged={lodash.debounce(
                         this.onGridSizeChanged,
